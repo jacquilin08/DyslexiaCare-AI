@@ -15,13 +15,15 @@ import {
   Volume2,
   VolumeX,
   LogOut,
+  RotateCcw,
 } from "lucide-react";
-import { useAppState, hydrate, updateSettings, signOut } from "@/lib/store";
+import { useAppState, hydrate, updateSettings, signOut, getDueReviews } from "@/lib/store";
 import { CompanionArt } from "@/components/art";
 
 const NAV = [
   { to: "/dashboard", label: "Home", icon: LayoutDashboard },
   { to: "/map", label: "Journey", icon: MapIcon },
+  { to: "/review", label: "Review", icon: RotateCcw },
   { to: "/progress", label: "Progress", icon: BarChart3 },
   { to: "/tutor", label: "Tutor", icon: Sparkles },
   { to: "/parent", label: "Parent", icon: Users },

@@ -1,9 +1,9 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect } from "react";
-import { Flame, Star, Trophy, Gem, ArrowRight, Target, Award, CheckCircle2 } from "lucide-react";
+import { Flame, Star, Trophy, Gem, ArrowRight, Target, Award, CheckCircle2, RotateCcw } from "lucide-react";
 import { AppShell } from "@/components/app-shell";
 import { CompanionArt, DragonArt } from "@/components/art";
-import { useAppState, claimQuestReward, DRAGON_STAGE_NAMES } from "@/lib/store";
+import { useAppState, claimQuestReward, DRAGON_STAGE_NAMES, getDueReviews } from "@/lib/store";
 import { LEVELS } from "@/lib/curriculum";
 
 export const Route = createFileRoute("/dashboard")({
@@ -45,6 +45,7 @@ function Dashboard() {
   const questsDone = state.quests.filter((q) => q.progress >= q.target).length;
   const fp = state.fingerprint;
   const lastBadge = state.badges[state.badges.length - 1];
+  const dueReviews = getDueReviews(state);
 
   return (
     <AppShell>
@@ -66,6 +67,24 @@ function Dashboard() {
       </div>
 
       <div className="mt-4 grid gap-4 lg:grid-cols-[1.4fr_1fr]">
+        {dueReviews.length > 0 && (
+          <Link
+            to="/review"
+            className="card-elevated flex items-center gap-3 border-l-4 border-l-gold p-4 transition-transform hover:-translate-y-0.5 lg:col-span-2"
+          >
+            <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-gold/15 text-gold">
+              <RotateCcw className="h-5 w-5" />
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="block text-sm font-bold">
+                {dueReviews.length} word{dueReviews.length === 1 ? "" : "s"} ready for a quick review
+              </span>
+              <span className="block text-xs text-muted-foreground">A minute or two — words you've missed before, at just the right time to try again.</span>
+            </span>
+            <ArrowRight className="h-4 w-4 shrink-0 text-muted-foreground" />
+          </Link>
+        )}
+
         <section className="card-elevated relative overflow-hidden p-6">
           <span className="text-xs font-bold uppercase tracking-wide text-primary">Continue your journey</span>
           <h2 className="mt-2 font-display text-2xl font-bold">

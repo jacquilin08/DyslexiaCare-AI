@@ -3,8 +3,9 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Heart, Star, Volume2, Mic, ImagePlus, ArrowRight, ArrowLeft, Play, Pause, RotateCcw } from "lucide-react";
 import { AppShell } from "@/components/app-shell";
 import { DragonCeremony } from "@/components/dragon-ceremony";
+import { DragonArt, type DragonMood } from "@/components/art";
 import { getLevel, getLevelQuestions, type Question } from "@/lib/curriculum";
-import { completeLevel, progressQuest, useAppState } from "@/lib/store";
+import { completeLevel, progressQuest, recordMistake, useAppState, type Fingerprint } from "@/lib/store";
 import { listenOnce, playCue, speak, speechRecognitionSupported, stopSpeaking, pauseSpeaking, resumeSpeaking } from "@/lib/speech";
 
 export const Route = createFileRoute("/level/$levelId")({
@@ -57,6 +58,9 @@ function LevelPlay() {
   const [lives, setLives] = useState(3);
   const [xp, setXp] = useState(0);
   const [correctCount, setCorrectCount] = useState(0);
+  const [mood, setMood] = useState<DragonMood>("neutral");
+  const moodTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => { if (moodTimer.current) clearTimeout(moodTimer.current); }, []);
 
   if (!level) {
     return (
@@ -70,6 +74,13 @@ function LevelPlay() {
 
   function handleAnswer(ok: boolean, gained: number) {
     playCue(ok ? "correct" : "gentle", state.settings.sound);
+    setMood(ok ? "happy" : "sad");
+    if (moodTimer.current) clearTimeout(moodTimer.current);
+    moodTimer.current = setTimeout(() => setMood("neutral"), 2600);
+    // Signal the map-page dragon companion (in-level real-time feedback)
+    window.dispatchEvent(new CustomEvent("dragon-feedback", { detail: { ok } }));
+    // Also write to sessionStorage so the dragon reacts on returning to map
+    sessionStorage.setItem("dyslexia_lastAnswer", ok ? "correct" : "wrong");
     if (ok) {
       setXp((x) => x + gained);
       setCorrectCount((c) => c + 1);
@@ -82,6 +93,8 @@ function LevelPlay() {
   }
 
   function next() {
+    if (moodTimer.current) clearTimeout(moodTimer.current);
+    setMood("neutral");
     if (index + 1 >= questions.length) {
       stopSpeaking();
       completeLevel({ level: id, correct: correctCount, xp, skillKey: level!.skillKey });
@@ -140,41 +153,163 @@ function LevelPlay() {
 
   return (
     <AppShell>
-      <div className="mx-auto max-w-2xl">
-        <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3">
+      {/* ── Slim progress bar ── */}
+      <div className="mx-auto max-w-4xl">
+        <div className="flex items-center justify-between gap-4">
+          {/* Progress dots + counter */}
           <div className="min-w-0">
-            <p className="text-sm font-bold">Question {index + 1} / 7</p>
+            <p className="text-sm font-bold text-muted-foreground">
+              Question <span className="text-foreground">{index + 1}</span> / 7
+            </p>
             <div className="mt-2 flex gap-1.5">
               {questions.map((_, i) => (
                 <span
                   key={i}
-                  className={`h-2.5 w-2.5 rounded-full ${i < index ? "bg-success" : i === index ? "bg-primary" : "bg-muted"}`}
+                  className={`h-2.5 w-2.5 rounded-full transition-colors duration-300 ${
+                    i < index ? "bg-success" : i === index ? "bg-primary" : "bg-muted"
+                  }`}
                 />
               ))}
             </div>
           </div>
+
+          {/* Hearts + XP (dragon removed from here) */}
           <div className="flex shrink-0 items-center gap-3">
             <span className="flex gap-0.5">
               {[0, 1, 2].map((i) => (
-                <Heart key={i} className={`h-4 w-4 ${i < lives ? "fill-destructive text-destructive" : "text-muted-foreground/30"}`} />
+                <Heart
+                  key={i}
+                  className={`h-5 w-5 transition-colors ${
+                    i < lives ? "fill-destructive text-destructive" : "text-muted-foreground/25"
+                  }`}
+                />
               ))}
             </span>
-            <span className="flex items-center gap-1 text-sm font-bold">
-              <Star className="h-4 w-4 text-gold" /> {xp}
+            <span className="flex items-center gap-1 rounded-xl border border-border bg-card px-3 py-1.5 text-sm font-bold shadow-sm">
+              <Star className="h-4 w-4 text-gold" /> {xp} XP
             </span>
           </div>
         </div>
 
-        <QuestionView
-          key={q.id + index}
-          question={q}
-          speed={state.settings.readingSpeed}
-          onAnswer={handleAnswer}
-          onNext={next}
-          last={index + 1 === questions.length}
-        />
+        {/* ── Main game area: Dragon ← | → Question card ── */}
+        <div className="mt-5 flex flex-col items-center gap-4 md:flex-row md:items-start md:gap-6">
+
+          {/* Dragon companion column */}
+          <DragonCompanion
+            key={`dragon-${index}`}
+            stage={state.dragonStage}
+            mood={mood}
+            questionIndex={index}
+          />
+
+          {/* Question card column */}
+          <div key={`card-${q.id}-${index}`} className="animate-question-card-enter w-full min-w-0 flex-1">
+            <QuestionView
+              key={q.id + index}
+              question={q}
+              speed={state.settings.readingSpeed}
+              skillKey={level!.skillKey}
+              onAnswer={handleAnswer}
+              onNext={next}
+              last={index + 1 === questions.length}
+            />
+          </div>
+
+        </div>
       </div>
     </AppShell>
+  );
+}
+
+/* ─── Dragon Companion (large, question-presenting) ─────────────────────── */
+
+const DRAGON_SPEECH: Record<DragonMood, string[]> = {
+  neutral: [
+    "Ready? Let's do this! 🐉",
+    "You can do it! 💪",
+    "I believe in you! ✨",
+    "Let's learn together! 📖",
+    "Here comes a new one! 🎯",
+    "Take your time! 🌟",
+    "You've got this! 🐉",
+  ],
+  happy: [
+    "Amazing! You got it! 🎉",
+    "Brilliant! 🌟",
+    "You're a star! ⭐",
+    "Fantastic work! 🏆",
+    "That's right! 🎊",
+  ],
+  sad: [
+    "Almost! Let's try again 💙",
+    "So close! Keep going! 💪",
+    "Every try makes you stronger! 🌱",
+    "Don't give up! 🐉",
+  ],
+};
+
+function DragonCompanion({
+  stage,
+  mood,
+  questionIndex,
+}: {
+  stage: number;
+  mood: DragonMood;
+  questionIndex: number;
+}) {
+  const pool = DRAGON_SPEECH[mood];
+  // Neutral cycles through messages per question; happy/sad picks consistently
+  const msgIndex = mood === "neutral" ? questionIndex % pool.length : questionIndex % pool.length;
+  const speech = pool[msgIndex]!;
+
+  const dragonAnimClass =
+    mood === "happy" ? "animate-dragon-happy-wiggle" :
+    mood === "sad"   ? "animate-dragon-sad-droop"   :
+                       "animate-dragon-idle";
+
+  const bubbleBorder =
+    mood === "happy" ? "border-success/50 bg-success/10"  :
+    mood === "sad"   ? "border-primary/30 bg-primary/8"   :
+                       "border-border bg-card";
+
+  return (
+    <div
+      className="animate-dragon-enter flex shrink-0 flex-col items-center gap-2"
+      aria-label={`Dragon companion feeling ${mood}`}
+    >
+      {/* Speech bubble */}
+      <div
+        key={`bubble-${mood}-${questionIndex}`}
+        className={`animate-bubble-pop relative max-w-[200px] rounded-2xl border px-4 py-2.5 text-center text-sm font-semibold leading-snug shadow-sm ${
+          bubbleBorder
+        }`}
+      >
+        {speech}
+        {/* Downward triangle pointer */}
+        <span
+          className="absolute -bottom-2 left-1/2 -translate-x-1/2 h-0 w-0"
+          style={{
+            borderLeft:  "9px solid transparent",
+            borderRight: "9px solid transparent",
+            borderTop:   `9px solid ${
+              mood === "happy"
+                ? "color-mix(in oklab, var(--success) 50%, transparent)"
+                : mood === "sad"
+                ? "color-mix(in oklab, var(--primary) 30%, transparent)"
+                : "var(--color-border)"
+            }`,
+          }}
+        />
+      </div>
+
+      {/* Dragon — large, animated */}
+      <DragonArt
+        key={`art-${mood}-${questionIndex}`}
+        stage={stage}
+        mood={mood}
+        className={`h-44 w-44 sm:h-56 sm:w-56 ${dragonAnimClass}`}
+      />
+    </div>
   );
 }
 
@@ -190,12 +325,14 @@ function Box({ label, value }: { label: string; value: string }) {
 function QuestionView({
   question,
   speed,
+  skillKey,
   onAnswer,
   onNext,
   last,
 }: {
   question: Question;
   speed: number;
+  skillKey: keyof Fingerprint;
   onAnswer: (ok: boolean, xp: number) => void;
   onNext: () => void;
   last: boolean;
@@ -231,6 +368,7 @@ function QuestionView({
 
   function checkText(value: string) {
     const ok = norm(value) === norm(question.answer) || (question.accepts ?? []).some((a) => norm(a) === norm(value));
+    if (!ok) recordMistake({ word: question.answer, typed: value, skillKey });
     resolve(ok, ok ? undefined : (analyseSpelling(value, question.answer) ?? undefined));
   }
 
@@ -371,6 +509,7 @@ function QuestionView({
                 disabled={answered}
                 onClick={() => {
                   setPicked(opt);
+                  if (opt !== question.answer) recordMistake({ word: question.answer, typed: opt, skillKey });
                   resolve(opt === question.answer);
                 }}
                 className={`rounded-2xl border-2 px-5 py-4 text-left font-learn text-lg font-bold transition-all ${

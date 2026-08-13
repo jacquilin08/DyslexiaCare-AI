@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { AppShell } from "@/components/app-shell";
-import { useAppState } from "@/lib/store";
+import { useAppState, summarizeConfusions, CONFUSION_LABELS } from "@/lib/store";
 
 export const Route = createFileRoute("/parent")({
   head: () => ({
@@ -19,6 +19,7 @@ export const Route = createFileRoute("/parent")({
 function Parent() {
   const s = useAppState();
   const fp = s.fingerprint;
+  const confusions = summarizeConfusions(s).slice(0, 3);
   const rows: [string, string][] = [
     ["Reading accuracy", `${fp.reading}%`],
     ["Spelling", `${fp.spelling}%`],
@@ -59,6 +60,24 @@ function Parent() {
           </p>
         </div>
       </div>
+
+      {confusions.length > 0 && (
+        <section className="card-elevated mt-4 p-6">
+          <h2 className="font-bold">Patterns noticed</h2>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Based on words {s.user?.name ?? "your learner"} has missed during practice. These are common and
+            well-understood patterns in early readers, not a sign of ability.
+          </p>
+          <ul className="mt-3 space-y-2">
+            {confusions.map((c) => (
+              <li key={c.pattern} className="flex items-center justify-between rounded-xl bg-parchment px-4 py-2.5 text-sm">
+                <span className="font-semibold">{CONFUSION_LABELS[c.pattern]}</span>
+                <span className="text-muted-foreground">{c.count} time{c.count === 1 ? "" : "s"}</span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
     </AppShell>
   );
 }
